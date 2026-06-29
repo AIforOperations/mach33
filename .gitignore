@@ -15,3 +15,8 @@ builds/
 !.claude/skills/figma_to_klaviyo/references/translation/glossaries/example.json
 .claude/skills/figma_to_klaviyo/references/translation/memory/*
 !.claude/skills/figma_to_klaviyo/references/translation/memory/example/
+
+# Dev-only agents stay LOCAL (the team that RUNS the skill doesn't need them). Only the
+# translator agent, which the skill invokes, is shipped.
+.claude/agents/*
+!.claude/agents/translator.md
