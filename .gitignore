@@ -3,10 +3,20 @@ __pycache__/
 .DS_Store
 
 # Secrets and per-machine working files are NOT committed.
-# The .env (Klaviyo key) is given to each teammate separately and dropped into the
-# repo root by hand during setup. .env.example (no real key) IS committed as a template.
+# The .env is given to each teammate separately and dropped into the repo root by hand during
+# setup. It holds the dummy KLAVIYO_API_KEY and, for real clients, one account PER STORE
+# (KLAVIYO_STORE_<SLUG>_*). Those real keys CANNOT be rotated, so a single leak is permanent:
+# `.env*` also catches .env.bak (wire's backup) and any .env.<x>; .env.example IS committed.
+# The .githooks/pre-commit scan is the backstop if something is force-added.
 .env
+.env.*
+!.env.example
 builds/
+
+# Keys are imported via a CSV (the store spreadsheet exported for `klaviyo.py wire`), holding raw
+# unrotatable keys. Ignore ALL .csv so no key file can be committed regardless of its name; nothing
+# in this repo is a tracked .csv. The .githooks/pre-commit scan also blocks a forced add.
+*.csv
 
 # Real per-brand translation data (glossaries + memory) stays LOCAL. Never commit client
 # data to this public repo. Only the generic "example" is tracked as a format reference;

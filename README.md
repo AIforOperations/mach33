@@ -38,9 +38,11 @@ that language.
 
 - Always sign in to Claude Code with the **shared Claude account** (the Figma connection
   rides on it; a personal API-key login will not see Figma).
-- The **`.env`** (Klaviyo key) is given to you separately and lives only on your machine. It
-  is never in the repo. Drop it into your `<your name>-Figma-to-Klaviyo` folder during setup.
-- This uses a **DUMMY** Klaviyo account. Rotate the key before any real send.
+- The **`.env`** holds the Klaviyo keys (the shared dummy account, plus one key per client store
+  once it is set up). It is given to you separately, lives only on your machine, and is never in
+  the repo. Drop it into your `<your name>-Figma-to-Klaviyo` folder during setup. The dummy key can
+  be rotated; the **real store keys cannot, so never commit or share the `.env`** (a safety hook
+  blocks committing it).
 - The skill never deletes anything in Figma; a safety guard blocks that, and setup verifies
   the guard works on your machine.
 - Full detail for Claude lives in `CLAUDE.md`, `SETUP.md`, and `.claude/skills/figma_to_klaviyo/`.

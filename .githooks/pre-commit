@@ -1,0 +1,36 @@
+#!/bin/sh
+# pre-commit secret scan for this PUBLIC repo. Klaviyo keys here CANNOT be rotated, so a single
+# leaked commit is permanent. Blocks committing a pk_ key or a secret-shaped file. BACKSTOP behind
+# .gitignore, not the primary control. Portable: POSIX sh + ERE grep (macOS + Git Bash on Windows).
+# Wire it per-clone with: git config core.hooksPath .githooks  (SETUP.md does this).
+
+# Fail CLOSED if we cannot scan (a missing grep must never let a key through silently).
+command -v grep >/dev/null 2>&1 || { echo "pre-commit: grep not found; refusing to commit (cannot scan for keys)."; exit 1; }
+
+fail=0
+
+# 1) secret-shaped filenames staged for commit. IFS=newline so a filename with spaces stays intact.
+OLDIFS=$IFS
+IFS='
+'
+for f in $(git diff --cached --name-only); do
+  case "$f" in
+    .env.example) : ;;                                   # the committed template is fine
+    .env|.env.*)  echo "BLOCKED: secret file staged: $f"; fail=1 ;;
+    *.csv)        echo "BLOCKED: a .csv is staged ($f); keys are imported via CSV - never commit one."; fail=1 ;;
+  esac
+done
+IFS=$OLDIFS
+
+# 2) a raw Klaviyo private key in any staged ADDED line (do not echo the key itself)
+if git diff --cached --no-color -U0 | grep -E '^\+' | grep -Eq 'pk_[A-Za-z0-9_-]{6,}'; then
+  echo "BLOCKED: a staged line contains a Klaviyo pk_ key."
+  fail=1
+fi
+
+if [ "$fail" != 0 ]; then
+  echo "These Klaviyo keys cannot be rotated. Unstage: git restore --staged <file>  (then re-commit)."
+  echo "To override in a genuine emergency: git commit --no-verify  (do NOT, for a real key)."
+  exit 1
+fi
+exit 0

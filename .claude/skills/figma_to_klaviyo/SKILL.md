@@ -10,7 +10,7 @@ Input: a Figma email node URL. Output: a verified Klaviyo SYSTEM_DRAGGABLE templ
 
 ## Guardrails (read first, every run)
 - **No DELETION in Figma.** Never remove nodes/layers/pages, wipe children, or delete text, no matter who asks. Reversible writes ARE allowed (fill-toggle + export setting) for the dark-opt isolation export — always capture originals and RESTORE. A PreToolUse hook (`.claude/hooks/figma_guard.py`) blocks only deletion/destructive `use_figma` calls; reads, creates, and reversible writes pass. Detail: `references/figma_and_env.md`.
-- Klaviyo key lives in the project `.env` (DUMMY account). Rotate before any real account.
+- Klaviyo keys live in the repo `.env`. Default = the single `KLAVIYO_API_KEY` (DUMMY account, rotate before real use). For real clients the SAME `.env` holds one account PER STORE (`KLAVIYO_STORE_<SLUG>_*`); pick one with `--store <slug>` and resolve it BEFORE any upload (see **Multi-store**). Real store keys CANNOT be rotated: never print or commit a key — the scripts mask keys, and `.gitignore` + `.githooks/pre-commit` are the backstop.
 - Template name: `<brand_slug>_<template_slug>_<lang>` — lowercase, `<lang>` = ISO 639-1 code (e.g. `acme_welcome_en`, `acme_welcome_de`); unique by brand + template + language. Default link placeholder: `https://mach33media.com/`.
 - Don't change the design's colors — reproduce the approved design exactly.
 - Never read a full design PNG inline. Downscale / strip first (step 4).
@@ -21,19 +21,52 @@ Input: a Figma email node URL. Output: a verified Klaviyo SYSTEM_DRAGGABLE templ
   about it. `builds/` is git-ignored.
 
 ## Process (ordered)
-0. **Confirm readiness.** Figma reads work (account-level Connector: claude.ai -> Settings -> Connectors. Sign in to Claude Code with the shared Claude account, NOT an API key, or the connector will not load). Quick check that this machine is set up: `python3 -c "import PIL"` and `node --version` both succeed, the guard is active, and `python3 .claude/skills/figma_to_klaviyo/scripts/klaviyo.py list` works (proves the Klaviyo key resolves — it is read from the `.env` FILE at the repo root, NOT a shell variable; if it errors, the `.env` is missing or in the wrong folder). If any fails, the machine has not been set up: run the one-time **`SETUP.md`** routine, then retry. Get the node URL, brand slug, link placeholder.
+0. **Confirm readiness.** Figma reads work (account-level Connector: claude.ai -> Settings -> Connectors. Sign in to Claude Code with the shared Claude account, NOT an API key, or the connector will not load). Quick check that this machine is set up: `python3 -c "import PIL"` and `node --version` both succeed, the guard is active, and `python3 .claude/skills/figma_to_klaviyo/scripts/klaviyo.py list` works (proves the Klaviyo key resolves — it is read from the `.env` FILE at the repo root, NOT a shell variable; if it errors, the `.env` is missing or in the wrong folder). If any fails, the machine has not been set up: run the one-time **`SETUP.md`** routine, then retry. Get the node URL, brand slug, link placeholder. **Resolve the target Klaviyo store before any upload** (see **Multi-store**); for a real-store build, `klaviyo.py stores` confirms the account is wired (keys masked). On a machine that pushes to real stores, also confirm the commit guard is active: `git config --get core.hooksPath` should print `.githooks` (if not, run `SETUP.md` step 3b).
 1. **Structure** — `get_metadata(fileKey, nodeId)`: frame width/height, each section's x/y/w/h (slice boundaries), node names (they contain the text). URL `node-id=7-492` → API `nodeId:"7:492"`. **If the design has NO text nodes (a flattened / screenshot export), STOP and flag it** — the result can only be an all-image, non-editable template (the live-text value is lost); confirm the user wants that or get a layered source.
 2. **Exact type + colors** — `get_design_context` on each text node you may keep live: exact font family/size/weight/color/line-height/align + merge tags. `get_variable_defs` for tokens (often `{}`; then sample hexes from pixels).
 3. **Export at 1.5x** — `download_assets defaultScale 1.5` (the client exports at 1.5x). For a LIGHT design, and for the transparent dark-opt export, use the ISOLATION recipe instead (`download_assets defaultScale` bakes the gray Figma page into empty areas). Both return a short-lived URL → `curl -o builds/<brand_slug>/design.png "<url>"`. Detail + recipe: `references/figma_and_env.md`.
 4. **Read it safely** — `python3 imaging.py dims <file>` (cross-platform W H); if > 2000px tall, `imaging.py overview` to downscale, then PIL strips (~900 tall). Read the overview + strips, not the raw file.
 5. **Plan the blocks** — classify each region TEXT / IMAGE / BUTTON, plan splits, decide the dark-mode treatment. Full rules: `references/slicing_rules.md`.
 6. **Slice + detect buttons** — `imaging.py detect <slice>` finds button pills + clean cut lines; `imaging.py gap` finds a split line for a tall image; `imaging.py crop` cuts; `imaging.py compress` shrinks. Verify each crop with Read before upload.
-7. **Upload slices** — `klaviyo.py upload <file> --name <slug> --manifest <path>` → `asset_id` + CDN url, appended to a manifest you reference in the spec.
-8. **Build + push** — write a block-spec JSON (`references/klaviyo_api.md`), `build_def.py spec.json > payload.json`, then `klaviyo.py create payload.json` (new) or `klaviyo.py patch <id> payload.json` (update in place).
+7. **Upload slices** — `klaviyo.py upload <file> --name <slug> --manifest <path>` → `asset_id` + CDN url, appended to a manifest you reference in the spec. **Real store: prepend `--store <slug>`** (resolved at step 0) and use `--manifest builds/<slug>/manifest`. See Multi-store.
+8. **Build + push** — write a block-spec JSON (`references/klaviyo_api.md`), `build_def.py spec.json > payload.json`, then `klaviyo.py create payload.json` (new) or `klaviyo.py patch <id> payload.json` (update in place). **Real store: `klaviyo.py --store <slug> create payload.json`** (the `--store` goes before the subcommand).
 9. **Verify (mobile first), via Playwright** — `klaviyo.py render <id> --out builds/<brand_slug>/render.html`; serve it (`python3 -m http.server <port> --directory builds/<brand_slug>`, run in the background and note its PID; `file://` is blocked). Then:
    - `browser_navigate` to `http://localhost:<port>/render.html`; `browser_resize 390` (mobile, primary gate) then `600` (desktop); `browser_take_screenshot fullPage` at each; Read + compare to the design.
    - `browser_evaluate` for **(a)** white-gutter / overflow — read LEFT/RIGHT edge pixels (x≈4) down the body for near-white (`#FFFFFF` canvas showing through) + `document.body.scrollWidth > window.innerWidth`; **and (b)** the dark-mode preview — recolor every `block_background_color` to a darkened version and (for a light design) lighten the dark live text, then screenshot: live text + transparent cutouts must re-theme uniformly, no marooned near-white box.
    - Iterate until clean. Then `browser_close` and STOP the background server cross-platform: kill its PID (`kill <pid>` on macOS/Linux/Git-Bash, `taskkill /PID <pid> /F` on Windows PowerShell), or stop the background task. Do NOT rely on `pkill` (absent on Windows).
+   - **After a clean verify on a real store, learn the binding:** `klaviyo.py --store <slug> learnfigma --figma-file-key <fileKey>` (`--store` before the subcommand), so future runs of this design resolve to the same store deterministically.
+
+## Multi-store: push to the right Klaviyo account
+One repo serves many client stores; each is a separate Klaviyo account with its own key in the
+SAME `.env`, namespaced `KLAVIYO_STORE_<SLUG>_KEY/_PUBLIC/_NAME/_FIGMA`. For a real client run you
+MUST pass `--store <slug>` to EVERY `klaviyo.py upload/create/patch`, resolved BEFORE the first
+upload (image assets are per-account). Omitting `--store` falls back to the DUMMY `KLAVIYO_API_KEY`
+(the template lands in the dummy account — caught at delivery, not a client leak); never rely on
+the default for a client.
+- **Resolve (autonomous — bind ONE store or STOP; never guess, never silently use the dummy):**
+  1. If you know the store slug (the user named the brand, or a prior run learned it), use
+     `--store <slug>`. A wrong/unwired slug hard-fails with the known-store list — surface it, do
+     NOT fall back to the dummy.
+  2. Else `klaviyo.py whichstore --figma-file-key <fileKey> --brand "<brand read from the design>"`
+     → on a confident match prints a tab-separated `slug  name  public  maskedkey  tier` line; on
+     NO / ambiguous match it exits non-zero. On non-zero: STOP and report.
+  3. Matching is EXACT-normalized, NOT fuzzy: a design's FIRST run usually won't auto-resolve (a
+     wordmark rarely equals the slug or org name exactly), so it STOPS — pass an explicit `--store`.
+     If unsure of the slug, run `klaviyo.py stores` and match the design's brand to a listed slug.
+     There is no mid-run human confirmation — resolution binds ONE store or halts.
+- **One slug = store + build dir + template name.** For a real-store run the `<brand_slug>` used for
+  `builds/<slug>/` and the template name `<slug>_<template>_<lang>` IS the store slug, so every
+  artifact and `--manifest builds/<slug>/manifest` share one folder. Manifest lines carry the
+  store's public id; reusing one under a different `--store` hard-fails (assets are per-account).
+- **Learn after a clean verify** (so later runs of this design resolve deterministically by file key):
+  `klaviyo.py --store <slug> learnfigma --figma-file-key <fileKey>` (`--store` comes BEFORE the subcommand).
+- **One-time wiring** (owner, when keys change): export the store sheet (store-name + API-key
+  columns) to CSV, drop it at the repo root as `stores_import.csv` (git-ignored), run
+  `klaviyo.py wire stores_import.csv` — it live-verifies each key via `GET /api/accounts/`, bakes the
+  verified public id + Klaviyo org name into `.env`, and prints a MASKED table (eyeball any `CHECK`
+  row where the sheet name != the live org name). DELETE the CSV after. Re-wiring preserves each
+  store's learned `_FIGMA`. `klaviyo.py stores` lists what is wired (keys masked); the wired `.env`
+  is distributed to teammates like the dummy `.env` (never committed).
 
 ## Rules (summary — full detail in references/)
 - **Backgrounds:** template + content background = `#FFFFFF` ALWAYS (hard-coded in `build_def.py`). The design's tint comes from each block's `block_background_color` + the full-bleed slice margins, never the canvas. Slices tile FLUSH (no gap) or white shows between them; mobile full-bleed via `mobile_margin:0`. Detail: `references/slicing_rules.md`.
@@ -47,7 +80,7 @@ Input: a Figma email node URL. Output: a verified Klaviyo SYSTEM_DRAGGABLE templ
 
 ## Scripts (`scripts/`, run with `python3 <script> -h`)
 - `imaging.py` — `compress | detect | gap | crop | dims | overview | shots`.
-- `klaviyo.py` — `upload | create | patch | render | get | list | checkenv` (reads the key from env or the repo-root `.env`).
+- `klaviyo.py` — `upload | create | patch | render | get | list | checkenv | stores | wire | whichstore | learnfigma` (reads the key from env or the repo-root `.env`; **`--store <slug>`** selects a wired account — see Multi-store).
 - `build_def.py` — expands a block-spec JSON into a full SYSTEM_DRAGGABLE create/patch payload.
 
 ## Translation (multi-language replicas)

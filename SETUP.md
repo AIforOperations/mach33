@@ -28,13 +28,21 @@ only what is missing, and print a clear PASS/FAIL checklist at the end.
   was flipped back to private; ask the owner to make it public again, or run `gh auth login` once.)
 
 ## 3. Clone into a per-person folder (NOT "mach33")
-- If you are ALREADY inside the repo (the current folder contains `.claude/`), just `git pull` and go to step 4.
+- If you are ALREADY inside the repo (the current folder contains `.claude/`), just `git pull` and go to step 3b.
 - Otherwise ask the person their **first name**, then clone into a folder named for them:
   `git clone https://github.com/AIforOperations/mach33.git "<FirstName>-Figma-to-Klaviyo"`,
   then `cd` into it. Sanitize the name to letters/digits/hyphens (e.g. "Jo Ann" becomes "JoAnn-Figma-to-Klaviyo").
   If that folder already exists from a previous attempt, `cd` into it and `git pull` instead of cloning.
   Do NOT leave it as the default "mach33" folder.
 - The repo root (the folder you just entered, holding `README.md` + `.claude/`) is "the repo root" referenced below.
+
+## 3b. Wire the secret-scan pre-commit hook (protects the unrotatable keys)
+This repo is PUBLIC and the `.env` may hold real Klaviyo keys that CANNOT be rotated. A committed
+hook blocks committing any `pk_` key or secret file. Point git at it (per-clone, idempotent):
+- `git config core.hooksPath .githooks`
+- macOS/Linux/Git-Bash: `chmod +x .githooks/pre-commit`.
+- Confirm: `git config --get core.hooksPath` prints `.githooks`.
+This is a backstop; `.gitignore` already keeps `.env*` and any keys CSV out of commits.
 
 ## 4. Drop in the .env (the Klaviyo key you were given)
 - Check for `.env` at the repo root. If it is missing, **PAUSE and ask the human** to copy the
@@ -100,6 +108,8 @@ not found), **STOP**: the machine is NOT safe for Figma writes. Fix `python3` (s
 - `python3 .claude/skills/figma_to_klaviyo/scripts/klaviyo.py list` (ONLINE; lists templates, confirms
   the key is valid). An HTTP/auth error here (not a "no key found" error) means the key resolved but
   the dummy account or network has an issue, note it, it is not a setup blocker.
+- If the `.env` you were given includes real client stores, `python3 .claude/skills/figma_to_klaviyo/scripts/klaviyo.py stores`
+  lists them with keys MASKED (offline). A fresh dummy-only `.env` just prints "No stores wired" — that is fine.
 
 ## 11. Claude Code wiring
 - The human must be signed into Claude Code with the SHARED Claude account, so the **Figma
@@ -115,6 +125,6 @@ not found), **STOP**: the machine is NOT safe for Figma writes. Fix `python3` (s
 ## Report
 Print PASS/FAIL for: OS, git, clone (per-person folder name), **`.env` present + key resolves
 (`checkenv`)**, node, python3 (+ Windows shim), Pillow, Playwright browser, **restart done if
-needed**, **GUARD SELF-TEST (must PASS)**, scripts smoke, Figma read works. For anything not PASS,
+needed**, **GUARD SELF-TEST (must PASS)**, **secret-scan hook (`core.hooksPath=.githooks`)**, scripts smoke, Figma read works. For anything not PASS,
 tell the human the exact next action. Then: "Open the `<FirstName>-Figma-to-Klaviyo` folder in
 Claude Code and type `/figma_to_klaviyo <figma link>`."

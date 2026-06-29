@@ -31,10 +31,15 @@ translating only the words. See the skill's translation flow (`references/transl
 - **Reproduce the approved design exactly**: never change its colors; keep live text editable
   in the Klaviyo editor.
 - Sign in to Claude Code with the **shared Claude account**; the Figma connection rides on it.
-- The Klaviyo key is the `.env` at the repo root (given to each teammate separately, never
-  committed). The scripts read it from that FILE, not a shell variable.
+- The Klaviyo keys live in the `.env` at the repo root (given to each teammate separately, never
+  committed; scripts read the FILE, not a shell variable). Besides the shared dummy `KLAVIYO_API_KEY`,
+  the `.env` holds one client account per store (`KLAVIYO_STORE_<SLUG>_*`). **Push to a real store
+  with `--store <slug>`; resolve the store (or STOP) before any upload — see the skill's Multi-store
+  section. Real store keys CANNOT be rotated; never print or commit one** (scripts mask keys;
+  `.gitignore` + `.githooks/pre-commit` are the backstop).
 - Working files (slices, renders) go in `builds/<brand_slug>/` under the repo root, never a
-  machine-specific path. This is a **DUMMY** Klaviyo account; rotate the key before any real send.
+  machine-specific path; for a real-store run the `<brand_slug>` IS the store slug. The default
+  `KLAVIYO_API_KEY` is a DUMMY account (safe to rotate); the per-store keys are REAL and cannot be.
 
 ## Cross-platform (macOS + Windows)
 Runs on both. Setup guarantees `python3`, `node`, and `git` on PATH (Windows gets a `python3`
