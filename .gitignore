@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Secrets and per-machine working files are NOT committed.
+# The .env (Klaviyo key) is given to each teammate separately and dropped into the
+# repo root by hand during setup. .env.example (no real key) IS committed as a template.
+.env
+builds/

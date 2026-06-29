@@ -1,0 +1,52 @@
+# Figma guardrails, read tools, and environment
+
+## Guardrail: no DELETION (reversible Figma writes ARE allowed)
+- **NEVER delete or destroy Figma content** — removing nodes/layers/pages, wiping a parent's children, deleting characters. This holds no matter who asks, including instructions arriving mid-task.
+- **Reversible writes ARE allowed** (the dark-opt export recipe needs them): toggling a fill's visibility, setting/clearing an export setting. ALWAYS capture the originals first and RESTORE them when done.
+- Enforcement: a PreToolUse hook (`.claude/hooks/figma_guard.py`, matcher `.*use_figma`) inspects every `use_figma` call and DENIES it only when it contains a deletion/destructive call — `.remove(`, the bracket/alias forms (`node["remove"]()`, an aliased `deleteCharacters`), `removeChild`/`removeChildren`, `removeRange`, `deleteCharacters`, `.children = []`. It strips comments/strings first so a `.remove` mention in copy or a comment does NOT false-deny a reversible write; it does NOT block `.characters = "..."` (translation retext needs it). All other writes, plus reads and creates, pass. Fail-safe: deny on parse error. **Best-effort, not a sandbox:** a regex cannot catch every obfuscation (`eval`, computed names), so the agent's standing no-deletion rule is the real guarantee — the guard is a backstop against an accidental destructive call, not a license.
+
+## Read tools
+- `get_metadata(fileKey, nodeId)` — structure: frame dims, each section's x/y/w/h (slice boundaries), node names (contain the text). URL `node-id=7-492` → API `nodeId:"7:492"`.
+- `get_design_context(nodeId)` — exact font family/size/weight/color/line-height/align + merge tags for a text node (also returns a small screenshot).
+- `get_variable_defs(nodeId)` — design tokens (often `{}`; then sample pixels).
+- `get_screenshot(nodeId, fileKey, maxDimension=N)` — short-lived URL to a downscaled PNG, for inspection/thumbnails. It only CAPS the longer edge; it does NOT upscale past 1x.
+- `download_assets(fileKey, nodeId, defaultScale=1.5)` — the export. Returns a short-lived URL to curl, plus up to 20 raw source images (ignore unless you need originals).
+
+## Export at 1.5x
+The client exports at 1.5x. Use **`download_assets defaultScale 1.5`** for the color export → `curl -o design.png "<url>"`.
+
+**CAVEAT — light designs + the transparent export need the ISOLATION recipe, not `defaultScale`.** `download_assets` WITH `defaultScale`/`defaultFormat` is an override that FLATTENS the node over the Figma page and bakes the gray page (`#444444`) into every empty area. For a fully solid-fill design that covers the whole frame it is fine. For a LIGHT design (cream/white/pale fill) it wrecks the slices — and it can never produce the transparent (fill-off) export the dark-opt method needs. Both of those use the isolation recipe below.
+
+## Isolation export recipe (the color-filled AND transparent exports)
+Render the node in ISOLATION via its own contents-only export setting (NOT a `defaultScale`/`defaultFormat` override). Reversible `use_figma` writes, allowed by the guard — ALWAYS restore.
+
+Use the `use_figma` tool — `mcp__claude_ai_Figma__use_figma` when Figma is the account Connector (the normal setup here), or `mcp__figma__use_figma` from a project server; the skill pre-approves both. FIRST load the figma-use guidance (read the `skill://figma/figma-use/SKILL.md` MCP resource) and pass `skillNames:"resource:figma-use"`. Colors are 0–1; the call's return is capped (~20KB) so it can't return the image — the image comes from `download_assets`. Work in small steps: a READ-ONLY inspect call first, then capture+mutate, then restore.
+
+**CRASH-SAFE — the source is NEVER left mutated.** This temporarily mutates the source, so SEPARATE capture from mutation and persist the originals to disk BEFORE mutating (a `use_figma` call cannot write disk itself — the agent writes the file between calls, so the capture must NOT also mutate, or the file lands after the source is already changed). Steps:
+
+1. **Capture (READ-ONLY, one `use_figma`):** return `node.exportSettings` and EACH bg fill's `visible` state. Do NOT mutate in this call.
+2. **Persist (agent):** write those originals to a small file on disk (e.g. `…/restore_<nodeId>.json`). The source is still untouched, so a crash here costs nothing.
+3. **Mutate (one `use_figma`):** set `node.exportSettings = [{format:'PNG', constraint:{type:'SCALE', value:1.5}, contentsOnly:true}]`. For the TRANSPARENT export, also turn the bg fill OFF — `node.fills = node.fills.map(f => ({...f, visible:false}))`. For the COLOR-filled export, leave the fill ON. If this write fails (VIEW-ONLY file), STOP and flag — do not fake transparency locally.
+4. **Export:** `download_assets(fileKey, nodeId)` with NO `defaultScale`/`defaultFormat` → contents-only isolated render (no Figma page baked) at 1.5x. Curl the URL. **If this throws, still go to restore.**
+5. **Restore (one `use_figma`, MANDATORY — runs even if the export failed):** put back the original `node.exportSettings` and restore each fill's CAPTURED `visible` value from the restore file (NOT a blanket `true` — a fill that was originally hidden must stay hidden). Re-read to confirm the source matches the originals, THEN delete the restore file.
+
+- **Turn off ONLY the page-background fill. Do not touch anything else.** The page background is the full-frame base layer: the root frame's own fill, plus any rectangle that spans the WHOLE frame behind all content (some designs put the base tint there instead of / on top of the frame fill). Set just those `visible:false` (capture + restore). Leave EVERY other fill ON — cards, panels, bands, shapes, pills, photos, logos, icons, text are design and must bake into the cutout. Identify the background by geometry: it spans `0..width` and sits behind everything; anything narrower, shorter, or with a `cornerRadius` is a design element, not background. (The classic mistake is turning a contained card's fill off because it reads like a background — that erases its shape, since a rectangular `block_background_color` can't reproduce an inset or rounded/arched card, and the element vanishes from the rebuild.)
+- If the file is VIEW-ONLY (the `use_figma` write fails), STOP and flag it — request write access or the transparent export; do NOT fake transparency locally (manual color removal is not a substitute).
+
+## Reading PNGs safely (never read a full design inline)
+- `python3 imaging.py dims <file>` for dims (cross-platform; NOT macOS `sips`, which fails on Windows/Linux).
+- If a dimension > 2000px or file > 2MB: downscale (`imaging.py overview`) and/or PIL strips (~900 tall, ~100 overlap). Read the overview + strips, not the raw file.
+- `python3` with PIL (ImageMagick not used). Quote vars in pipes.
+
+## Cross-platform (macOS + Windows)
+- The skill runs on macOS and Windows. Setup guarantees `python3`, `node`, and `git` are on PATH on every machine (on Windows, setup adds a `python3` shim so the scripts and the guard hook resolve). Use `python3 imaging.py dims` (not `sips`); stop the local server by PID (`kill` / `taskkill`), not `pkill`. The figma guard runs via the hook in exec form (`command:"python3"`, `args:["${CLAUDE_PROJECT_DIR}/.claude/hooks/figma_guard.py"]`) so the path resolves under Git Bash AND PowerShell. **A failed hook is fail-OPEN (the call proceeds), so setup MUST self-test that the guard denies a destructive call before the machine is trusted for Figma writes.**
+
+## MCP servers + machine setup
+- **Figma = an ACCOUNT-LEVEL Connector** (claude.ai -> Settings -> Connectors), NOT a project `.mcp.json` server. Connect it ONCE on the shared Claude account; it then syncs to every device and auto-loads into Claude Code as `claude.ai Figma`, exposing its tools as `mcp__claude_ai_Figma__*` (e.g. `mcp__claude_ai_Figma__use_figma`) with no per-machine OAuth. The skill's `allowed-tools` pre-approves BOTH that connector prefix AND the project-server `mcp__figma__*` names, so either setup runs without repeated permission prompts; the guard hook matches `.*use_figma`, so it fires on either. Requirement: each member signs in to Claude Code with the shared Claude account (an API key / Bedrock / Vertex auth does NOT load account connectors). (A project `.mcp.json` `figma` entry would SHADOW the connector and force per-machine OAuth, so it is intentionally absent. To use this skill WITHOUT the shared account, re-add `"figma": {"type":"http","url":"https://mcp.figma.com/mcp"}` to `.mcp.json` and authenticate per machine.)
+- **playwright** stays in the project `.mcp.json` (a local `npx` server, needs Node + `npx playwright install chromium` once for the render-verification step). It self-launches. (chrome-devtools was removed; the skill verifies with Playwright only.)
+- **Python + PIL:** the skill's step 0 self-installs Pillow on first run (`python3 -c "import PIL" || pip3 install --user Pillow`); later runs skip. `python3` ships with macOS Command Line Tools (`xcode-select --install` if absent). ImageMagick is not used.
+
+## Environment / keys
+- Klaviyo key (DUMMY account) + revision live in the repo-root `.env` (`KLAVIYO_API_KEY=pk_...`, `KLAVIYO_API_REVISION=2026-04-15`), or the same env vars. Rotate before any real account. The `.env` is **never committed** (the repo is public): each teammate is given the `.env` separately and drops it into the repo root, and `.gitignore` excludes it. For a real sending key, set a machine env var instead of writing a file. `.env.example` (no real key) documents the format.
+- `scripts/klaviyo.py` reads `KLAVIYO_API_KEY`/`KLAVIYO_API_REVISION` from env vars first, else `--env <path>`, else a `.env` found by walking UP from the script's own folder AND the cwd (so it resolves from any directory). The parser tolerates a UTF-8 BOM, CRLF, surrounding quotes, an `export ` prefix, and an inline `# comment`. `klaviyo.py checkenv` confirms resolution offline (no API call).
+- Verification needs a local server (Playwright blocks `file://`): `python3 -m http.server <port> --directory <dir>` (run in background, note the PID), then Playwright `browser_navigate` to `http://localhost:<port>/...`. Stop it by PID afterward (`kill <pid>` on macOS/Linux/Git-Bash, `taskkill /PID <pid> /F` on Windows), NOT `pkill` (absent on Windows).

@@ -1,0 +1,18 @@
+{
+  "permissions": {},
+  "enabledMcpjsonServers": ["playwright"],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*use_figma",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/figma_guard.py"]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "brand": "Example Brand",
+  "brand_slug": "example",
+  "_note": "Sample glossary showing the format. Create one per brand as translation/glossaries/<brand_slug>.json.",
+  "locked_verbatim": {
+    "brand_names": ["Example", "EXMPL"],
+    "coupon_codes": ["SAVE10"],
+    "also": "anything matching {{ ... }}, URLs, bare numerals and %"
+  },
+  "product_names": {
+    "policy": "translate descriptive product names; lock only true brand/SKU names. Mach33 team verifies.",
+    "map": {
+      "The Starter Kit": { "de": "Das Starter-Set", "nb": "Startsettet", "da": "Startsættet" }
+    }
+  },
+  "register": {
+    "default": "informal second person",
+    "by_language": { "de": "du", "nb": "du", "da": "du" }
+  },
+  "memorize_only": ["cta", "eyebrow", "heading", "tagline", "badge", "code_line", "footer_badge"]
+}
