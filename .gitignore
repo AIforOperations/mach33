@@ -7,3 +7,11 @@ __pycache__/
 # repo root by hand during setup. .env.example (no real key) IS committed as a template.
 .env
 builds/
+
+# Real per-brand translation data (glossaries + memory) stays LOCAL. Never commit client
+# data to this public repo. Only the generic "example" is tracked as a format reference;
+# any other brand's glossary/memory is built up during use and ignored here.
+.claude/skills/figma_to_klaviyo/references/translation/glossaries/*
+!.claude/skills/figma_to_klaviyo/references/translation/glossaries/example.json
+.claude/skills/figma_to_klaviyo/references/translation/memory/*
+!.claude/skills/figma_to_klaviyo/references/translation/memory/example/
