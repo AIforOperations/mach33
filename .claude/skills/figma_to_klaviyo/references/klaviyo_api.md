@@ -42,7 +42,7 @@ Klaviyo embeds the account's hosted fonts via `@import url(https://static-forms.
 ## Block-spec format (author this, feed to build_def.py)
 ```json
 {
-  "name": "ari-test-<slug>",
+  "name": "acme_welcome_en",
   "width": 600,
   "headings": {
     "heading-2-styles": {"color":"#0c2b3e","font_family":"'Poppins-Klaviyo-Hosted', Helvetica, Arial, sans-serif",
@@ -66,6 +66,7 @@ Klaviyo embeds the account's hosted fonts via `@import url(https://static-forms.
   "target": {"mode":"create"}
 }
 ```
+- `name` = `<brand_slug>_<template_slug>_<lang>` (lowercase; `<lang>` = ISO 639-1, e.g. `acme_welcome_de`). Unique by brand + template + language. Klaviyo does not enforce unique names (the id is the key), so this is for human readability; add a `_v2` suffix only if you must distinguish a rebuild.
 - `target` = `{"mode":"create"}` or `{"mode":"patch","id":"<template_id>"}`.
 - `pad` on text = `[top,bottom,left,right]`; on button = `[vertical, horizontal]`.
 - `background_color`/`content_background_color` in the spec are IGNORED (build_def hard-codes the white canvas) — don't set them.

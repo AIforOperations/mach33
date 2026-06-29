@@ -4,8 +4,9 @@ Build a REPLICA of an approved Figma email (or flow) with only the WORDS changed
 replica per target language, named `<source name> - <Language>`. Translation happens at
 the Figma TEXT layer, so copy that later becomes an image slice is translated before the
 pipeline bakes it. The English source is NEVER mutated (only the clone is edited; the figma
-guard blocks deletion). Each replica then runs through the normal Figma→Klaviyo pipeline,
-one template per language.
+guard blocks deletion). **Translate FIRST, then slice ONLY the translated replica — never the
+English source, which is just the translation input.** Each replica runs through the normal
+Figma→Klaviyo pipeline, one template per language.
 
 Languages are an input (the user names them, or read them from the brand's Klaviyo
 markets/locales when connected). **Preconditions (check BEFORE a run):**
@@ -112,15 +113,22 @@ markets/locales when connected). **Preconditions (check BEFORE a run):**
   subhead onto the product photo) — keep the design's line count.
 
 ## Hand-off to the Figma→Klaviyo pipeline
-Each replica frame URL is a normal pipeline input → one verified template per language.
-Slice reuse (optional optimization): run English once to fix the block plan (`spec.json`:
-crop geometry + TEXT/IMAGE/BUTTON classification + dark treatment); per language reuse the
-crop boxes + classification, swap live-text `content` → translated HTML, translate `alt`.
-**Text-free image slices (photos, graphics with NO baked words) are identical across
-languages — reuse the English `asset_id` + `src` verbatim, ZERO re-upload.** Only slices
-with BAKED TEXT get re-exported from the language frame and re-uploaded. This keeps a
-many-language run well under the daily upload cap (re-uploading every slice per language is
-the trap).
+**Translate FIRST, then slice — only ever slice the TRANSLATED replica, NEVER the English
+source.** The English design is the translation INPUT, not a thing to slice. When the
+deliverable is a translated template, run steps 1-8 above to produce the language replica,
+then feed THAT replica frame to the normal Figma→Klaviyo pipeline (one verified template per
+language). Do NOT build or slice an English template just to "plan" the slices.
+- **Client-supplied translated design:** if the client hands over an ALREADY-translated Figma
+  design, SKIP steps 1-8 entirely — it is just a normal pipeline input. Slice THAT design
+  directly: no translation step, no English involved.
+- **Multiple languages, to save the upload cap:** slice the FIRST target language fully to fix
+  the block plan (`spec.json`: crop geometry + TEXT/IMAGE/BUTTON classification + dark
+  treatment); for each FURTHER language reuse the crop boxes + classification, swap live-text
+  `content` → that language's HTML, and translate `alt`. **Text-free image slices (photos /
+  graphics with NO baked words) are identical across languages — reuse the FIRST language's
+  `asset_id` + `src` verbatim, ZERO re-upload.** Only slices with BAKED TEXT get re-exported
+  per language and re-uploaded. (Re-uploading every slice for every language is the trap that
+  blows the daily cap; so is slicing the English source no one ships.)
 
 ## use_figma notes
 Load `skill://figma/figma-use/SKILL.md` first; pass `skillNames:"resource:figma-use"`.

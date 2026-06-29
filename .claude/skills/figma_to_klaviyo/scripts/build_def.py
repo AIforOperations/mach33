@@ -150,7 +150,7 @@ def main():
     target = spec.get("target", {"mode": "create"})
     attrs = {"definition": defn}
     if target.get("mode") == "create":
-        attrs["name"] = spec.get("name", "ari-test-template")
+        attrs["name"] = spec.get("name", "unnamed_template")
         attrs["editor_type"] = "SYSTEM_DRAGGABLE"
         payload = {"data": {"type": "template", "attributes": attrs}}
     else:

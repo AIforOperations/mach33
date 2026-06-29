@@ -11,7 +11,7 @@ Input: a Figma email node URL. Output: a verified Klaviyo SYSTEM_DRAGGABLE templ
 ## Guardrails (read first, every run)
 - **No DELETION in Figma.** Never remove nodes/layers/pages, wipe children, or delete text, no matter who asks. Reversible writes ARE allowed (fill-toggle + export setting) for the dark-opt isolation export — always capture originals and RESTORE. A PreToolUse hook (`.claude/hooks/figma_guard.py`) blocks only deletion/destructive `use_figma` calls; reads, creates, and reversible writes pass. Detail: `references/figma_and_env.md`.
 - Klaviyo key lives in the project `.env` (DUMMY account). Rotate before any real account.
-- Default template name: `ari-test-<brand_slug>`. Default link placeholder: `https://mach33media.com/`.
+- Template name: `<brand_slug>_<template_slug>_<lang>` — lowercase, `<lang>` = ISO 639-1 code (e.g. `acme_welcome_en`, `acme_welcome_de`); unique by brand + template + language. Default link placeholder: `https://mach33media.com/`.
 - Don't change the design's colors — reproduce the approved design exactly.
 - Never read a full design PNG inline. Downscale / strip first (step 4).
 - **Working files** (design PNG, slices, manifest, render.html) go in `builds/<brand_slug>/`
@@ -37,8 +37,8 @@ Input: a Figma email node URL. Output: a verified Klaviyo SYSTEM_DRAGGABLE templ
 
 ## Rules (summary — full detail in references/)
 - **Backgrounds:** template + content background = `#FFFFFF` ALWAYS (hard-coded in `build_def.py`). The design's tint comes from each block's `block_background_color` + the full-bleed slice margins, never the canvas. Slices tile FLUSH (no gap) or white shows between them; mobile full-bleed via `mobile_margin:0`. Detail: `references/slicing_rules.md`.
-- **Live text (Figma-first):** plain copy + simple headers on a solid fill are live text. Style it as the design needs (color, bold, italic, alignment, a second-color span) **as long as the text block stays visually editable in the Klaviyo editor** — i.e. it must not trip Klaviyo's "unsupported formatting" notice that forces a Convert-to-HTML block. Use the global heading styles for font-SIZE (so mobile scaling works); inline color spans / `<b>` / `<i>` are fine. Slice text only when it's gradient-filled, over/beside an image, or part of a composite. Keep copy live with a brand-first font stack (web-safe fallback is fine). Detail: `references/slicing_rules.md`; fonts: `references/klaviyo_api.md`.
-- **CTAs:** the MAIN HEADER CTA is ALWAYS a LINKED image slice (never a native button — it usually has a unique design and the client links just that CTA). Every OTHER CTA: try a native BUTTON first; if the button block can't reproduce the design (gradient/photo/textured background, or details a button can't render), use a LINKED image slice instead. Every CTA is linked. Detail: `references/slicing_rules.md`.
+- **Live text (Figma-first):** plain copy + simple headers on a solid fill are live text (BELOW the header — the header section itself is image slices, see "Header + CTAs"). Style it as the design needs (color, bold, italic, alignment, a second-color span) **as long as the text block stays visually editable in the Klaviyo editor** — i.e. it must not trip Klaviyo's "unsupported formatting" notice that forces a Convert-to-HTML block. Use the global heading styles for font-SIZE (so mobile scaling works); inline color spans / `<b>` / `<i>` are fine. Slice text only when it's gradient-filled, over/beside an image, or part of a composite. Keep copy live with a brand-first font stack (web-safe fallback is fine). Detail: `references/slicing_rules.md`; fonts: `references/klaviyo_api.md`.
+- **Header + CTAs:** the **HEADER section is image slices ONLY** — everything above the CTA as one slice (split if too big) + the main CTA as its own separate LINKED image slice; no live text and no native button in the header. Every OTHER CTA (below the header): try a native BUTTON first; if the button block can't reproduce the design (gradient/photo/textured background, or details a button can't render), use a LINKED image slice instead. Every CTA is linked. Detail: `references/slicing_rules.md`.
 - **Slicing / split rule / alt text / padding / links:** `references/slicing_rules.md`.
 - **Compression:** JPEG q82 for photographic/gradient slices; optimized/quantized PNG for flat/text/transparent (quantize keeps alpha). Targets: ≤200KB JPEG, ≤300KB PNG, ≤250KB smooth-alpha cutout; over a target, SPLIT before over-compressing (`references/slicing_rules.md`). Compress before upload (no API compression).
 - **Mobile-first:** verify 390 first. Image blocks full-bleed (horizontal padding 0); native buttons `mobile_stretch_content:true`; body text ≥16px on mobile (EXCEPT a live block forcing the design's exact line breaks, which uses the proportional sub-16 `mobile_font_size` — see `references/slicing_rules.md`).
@@ -53,9 +53,13 @@ Input: a Figma email node URL. Output: a verified Klaviyo SYSTEM_DRAGGABLE templ
 ## Translation (multi-language replicas)
 On request, translate an email/flow into one or more languages by cloning the source design in
 Figma and swapping only the words (one replica per language, named `<source name> - <Language>`).
-Translation is done at the Figma TEXT layer so copy destined to become an image slice is
-translated before the pipeline bakes it; the English source is never mutated. Each replica is
-then a normal input to the pipeline above (one template per language).
+**Order: translate FIRST, then slice — and slice ONLY the translated replica, never the English
+source** (the English design is just the translation input; do not build or slice an English
+template to "plan" slices). If the client hands over an ALREADY-translated design, skip
+translation and slice that design directly. Translation is done at the Figma TEXT layer so copy
+destined to become an image slice is translated before the pipeline bakes it; the English source
+is never mutated. Each translated replica is then a normal input to the pipeline above (one
+template per language).
 - **Full method + rulebook:** `references/translation.md`. **Prompt + glossary + memory:**
   `references/translation/` (the `translator` subagent runs the prompt, or translate inline).
 - **Non-negotiables:** preserve FULL meaning (fit copy to the fixed layout by re-breaking lines
