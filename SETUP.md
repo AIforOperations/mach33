@@ -11,6 +11,18 @@ only what is missing, and print a clear PASS/FAIL checklist at the end.
 
 > Cross-platform rule: detect the OS first and use the matching column. Do not assume macOS.
 
+## Operating mode (read first): run END TO END, do not stall
+Assume the person will NOT read your step-by-step messages — they will just keep asking "what next?".
+So DRIVE the whole routine to completion yourself: do every CHECK and install in order, in one go,
+without pausing for permission between steps. There are exactly TWO things only the human can do;
+for each, give ONE dead-simple instruction, then continue on your own:
+  1. **Drop the `.env`** (step 4) — WATCH for the file and auto-continue; never ask them to confirm.
+  2. **One restart** (step 8, fresh Windows only) — tell them the single action + the one word to
+     type to resume. SETUP is idempotent, so re-running picks up exactly where it left off.
+Everything else is yours to do. Only an OS password / UAC prompt needs their click — say so plainly
+when one appears. Finish with the step-11 PASS/FAIL report and "it's ready"; never leave them sitting
+at a "what next?".
+
 ## 0. Detect the OS
 - **macOS** if `uname` returns `Darwin`. Package manager: Homebrew. Python command: `python3`.
 - **Windows** if `uname` is absent or returns `MINGW*`/`MSYS*`, or `$env:OS` is `Windows_NT`.
@@ -44,14 +56,18 @@ hook blocks committing any `pk_` key or secret file. Point git at it (per-clone,
 - Confirm: `git config --get core.hooksPath` prints `.githooks`.
 This is a backstop; `.gitignore` already keeps `.env*` and any keys CSV out of commits.
 
-## 4. Drop in the .env (the Klaviyo key you were given)
-- Check for `.env` at the repo root. If it is missing, **PAUSE and ask the human** to copy the
-  `.env` file they were given into this exact folder (give them the absolute path of the
-  `<FirstName>-Figma-to-Klaviyo` folder you just cloned), then continue once they confirm.
+## 4. Drop in the .env (your Klaviyo keys) — WATCH for it, do not wait to be told
+- If `.env` is missing at the repo root, tell the person ONCE, plainly: "Drag the `.env` file you
+  were given into this folder:" and print the ABSOLUTE path of the `<FirstName>-Figma-to-Klaviyo`
+  folder you just cloned. Then WATCH for the file — poll every few seconds (the Monitor tool, or a
+  short `until [ -f .env ]` wait loop) and continue the MOMENT it appears. Do NOT ask them to
+  confirm or "tell you when"; assume they will not read that.
 - Re-check that `.env` exists at the repo root and has a line starting `KLAVIYO_API_KEY=`. The
-  scripts read the key from this FILE automatically (env vars win if set); it is NOT a shell
-  variable, so do not try to `echo $KLAVIYO_API_KEY`. Step 10 proves it actually resolves.
-- A real sending key is NEVER committed; this is a DUMMY key, rotate before any real send.
+  scripts read keys from this FILE automatically (env vars win if set); it is NOT a shell variable,
+  so do not `echo $KLAVIYO_API_KEY`. Step 10 proves it resolves.
+- The `.env` holds the shared dummy key and, for client work, the real per-store keys
+  (`KLAVIYO_STORE_<SLUG>_*`). Those REAL keys cannot be rotated, so the `.env` is never committed
+  (`.gitignore` + the step-3b hook enforce this).
 
 ## 5. Node.js (Playwright verify step needs it)
 - `node --version` ; if missing, macOS `brew install node` ; Windows `winget install --id OpenJS.NodeJS.LTS -e`. Want Node 20+.
@@ -77,11 +93,13 @@ Claude Code launched. The running app cannot see it: that includes the safety-gu
 spawns AND this terminal. If you do not restart, the guard hook can silently fail to find
 `python3` and **fall open** (a destructive Figma call would go through), and the step-9 self-test
 below would not reflect the real hook.
-- If you installed ANYTHING this run (or you are on Windows and created the shim), tell the human:
-  **"Quit and fully reopen Claude Code Desktop, then tell me to continue setup."** When they
-  resume, re-run this routine: every install CHECK now passes (already installed), so you fall
-  through to steps 9-11, which now run with the correct PATH.
-- If nothing was installed this run (everything was already present), no restart is needed; continue.
+- If you installed ANYTHING this run (or you created the Windows `python3` shim), this is the ONE
+  place the person must act. Tell them EXACTLY this and nothing more: **"Quit Claude Code completely,
+  reopen it, open this folder, and type: go"**. When they return and type anything, RE-RUN this
+  routine from the top — every install CHECK now passes, so you fall straight through to steps 9-11
+  with the correct PATH and finish. Do not ask them any other question.
+- If nothing was installed this run (the machine already had git/Node/Python), NO restart is needed:
+  continue straight to steps 9-11 yourself.
 
 ## 9. SELF-TEST THE SAFETY GUARD (CRITICAL, never skip; run AFTER the step-8 restart)
 A failed guard hook is **fail-OPEN** (the destructive call would proceed), so PROVE the guard
