@@ -11,7 +11,7 @@ Claude Code. Runs on **macOS and Windows**.
 2. Save the **`.env` file** you were given somewhere easy to find (your Desktop is fine).
 3. Open any empty folder in Claude Code and paste this one message:
 
-   > Set me up for the Figma-to-Klaviyo tool. First ask me my first name. If git is not installed yet, install it (Windows: `winget install --id Git.Git -e`; macOS: `xcode-select --install`). Then with plain `git clone` (the repo is public, no GitHub login), clone https://github.com/AIforOperations/mach33 into a new folder named "<my first name>-Figma-to-Klaviyo"; if that folder already exists, cd into it and `git pull` instead. Then follow the SETUP.md inside it. I have a `.env` file to add, so pause and tell me when to drop it into that folder.
+   > Set me up for the Figma-to-Klaviyo tool. Ask me my first name, then (installing git first if it's missing) clone https://github.com/AIforOperations/mach33 with a plain public git clone (no login) into a new folder named "<my first name>-Figma-to-Klaviyo", and follow the SETUP.md inside it. I have a .env file to add, so pause and tell me when to drop it into that folder.
 
    Claude installs everything it needs (Git, Node, Python, Playwright, the image library),
    adapting to your operating system, and pauses to let you copy in the `.env`. Just complete
