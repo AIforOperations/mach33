@@ -10,7 +10,7 @@ Subcommands:
   list   [--filter SUBSTR]                           list templates (id | name | editor | HAS-BUTTON)
   checkenv                                           offline: confirm the key (default or --store) resolves
   stores                                             offline: list wired stores from .env (keys MASKED)
-  fonts  [--has FAMILY]                              list account-hosted fonts; --has tests one (PRESENT/ABSENT)
+  fonts  [--has FAMILY]                              list account fonts; --has FAMILY prints a ready font_family stack
   wire   <export.csv> [--only s1,s2] [--write-env P] verify each store's key via /accounts, write .env block
   whichstore [--brand NAME] [--figma-file-key KEY]   resolve a design to ONE store slug (or fail; never guess)
   learnfigma --figma-file-key KEY  (with --store)    remember that a Figma file belongs to a store
@@ -485,7 +485,7 @@ def _cmd_wire(a):
         print("SKIPPED (%d, bad/rejected key, NOT written): %s" % (len(bad), ", ".join(bad)))
 
 # ---------------------------------------------------------------------------
-# fonts: which font families does an account host? (drives Figma-font-first selection)
+# fonts: resolve a design's font to the account-correct font_family stack (exact font, then Poppins)
 # ---------------------------------------------------------------------------
 def _account_public(key, rev, store):
     # The custom_fonts.css URL is keyed by the 6-char public/company id. Use the wired
@@ -510,40 +510,66 @@ def _fetch_fonts_css(public):
     except OSError as e:
         _err("ERROR: network failure fetching custom_fonts.css for %s (%s)" % (public, e))
 
+def _fam_key(name):
+    # normalize a family name for matching: drop a Klaviyo '-Klaviyo-Hosted' suffix, then alnum-lower.
+    return _norm(re.sub(r"-?klaviyo-?hosted\s*$", "", (name or "").strip(), flags=re.I))
+
 def _parse_fonts_css(css):
-    # HOSTED = '@font-face' families named '<Base>-Klaviyo-Hosted' -> these actually render in
-    # the SEND. WEB = '@import ...family=<Name>' Google fonts -> preview in the editor only and
-    # fall back to web-safe in the send, so they do NOT count as "present".
-    hosted = {}  # normalized base name -> exact font-family string (incl. the -Klaviyo-Hosted suffix)
-    for m in re.finditer(r"font-family:\s*['\"]?([^;'\"}]+?)-Klaviyo-Hosted['\"]?", css):
-        base = m.group(1).strip()
-        hosted[_norm(base)] = base + "-Klaviyo-Hosted"
-    web, seen = [], set()
+    # Both kinds of entries in an account's custom_fonts.css are usable (the editor's font picker
+    # reads this file, and every Klaviyo render @imports it):
+    #   UPLOADED = any '@font-face { font-family: <X> }' (Klaviyo-hosted '<Base>-Klaviyo-Hosted'
+    #     OR a plain custom-uploaded name like 'Karla'); renders in the send on supporting clients.
+    #   WEB = '@import ...family=<Name>' Google fonts (Poppins, DM Sans, ...); the KM sees them in
+    #     the editor and they render on supporting clients (Gmail/Outlook fall back, as any non-system font does).
+    uploaded = {}  # match-key -> exact font-family string to put in font_family
+    for m in re.finditer(r"@font-face\s*\{[^}]*?font-family:\s*['\"]?([^;'\"}]+?)['\"]?\s*[;}]", css, re.I | re.S):
+        fam = m.group(1).strip()
+        uploaded[_fam_key(fam)] = fam
+    web = {}
     for m in re.finditer(r"family=([^:&'\")]+)", css):
         fam = m.group(1).replace("+", " ").strip()
-        if fam and _norm(fam) not in seen:
-            seen.add(_norm(fam)); web.append(fam)
-    return hosted, web
+        if fam:
+            web.setdefault(_fam_key(fam), fam)
+    return uploaded, web
+
+def _font_stack(primary):
+    # exact Figma font first, Poppins as the fallback, then web-safe. Poppins-only when no exact match.
+    out = []
+    if primary:
+        out.append("'%s'" % primary)
+    if _norm(primary or "") != "poppins":                # don't duplicate when primary already IS web Poppins
+        out.append("'Poppins'")
+    out += ["Helvetica", "Arial", "sans-serif"]
+    return ", ".join(out)
+
+def _resolve_font(css, figma_family):
+    # returns (tier, stack). tier: UPLOADED | WEB | FALLBACK.
+    uploaded, web = _parse_fonts_css(css)
+    k = _fam_key(figma_family)
+    if k and k in uploaded:
+        return "UPLOADED", _font_stack(uploaded[k])
+    if k and k in web:
+        return "WEB", _font_stack(web[k])
+    return "FALLBACK", _font_stack(None)                 # rare: account has neither -> Poppins fallback
 
 def _cmd_fonts(a, key, rev, store):
     public = _account_public(key, rev, store)
     if not public:
         _err("ERROR: could not resolve the account public id (needed for the fonts CSS).")
-    hosted, web = _parse_fonts_css(_fetch_fonts_css(public))
-    if a.has:                                            # scriptable presence check for the skill
-        want = _norm(a.has)
-        if want in hosted:
-            _out("PRESENT\t%s" % hosted[want])           # exact family string to drop into font_family
-            return
-        _out("ABSENT\t%s" % a.has)
-        sys.exit(2)
+    css = _fetch_fonts_css(public)
+    if a.has:                                            # scriptable: print a ready font_family stack, always exit 0
+        tier, stack = _resolve_font(css, a.has)
+        _log("font %r -> %s\n" % (a.has, tier))          # tier is info (stderr); stdout is the paste-ready stack
+        _out(stack)
+        return
+    uploaded, web = _parse_fonts_css(css)
     label = _target_desc(store) if store else ("DEFAULT account (public %s)" % public)
     _out("account: %s" % label)
-    _out("hosted fonts (RENDER in the send -> usable): %s"
-         % (", ".join(sorted(hosted.values())) or "(none uploaded)"))
-    _out("editor-only web fonts (preview only; fall back to web-safe in the send): %s"
-         % (", ".join(web) or "(none)"))
-    _out("Rule: use a design font ONLY if it is listed under 'hosted'; otherwise use a web-safe fallback.")
+    _out("uploaded fonts (render in the send + editor): %s"
+         % (", ".join(sorted(uploaded.values())) or "(none)"))
+    _out("web fonts (KM sees them in the editor; render on supporting clients): %s"
+         % (", ".join(sorted(web.values())) or "(none)"))
+    _out("Use the design's Figma font when it is in either list (exact name first), else Poppins; web-safe is the last fallback.")
 
 def main():
     ap = argparse.ArgumentParser(description="Klaviyo client for figma_to_klaviyo")

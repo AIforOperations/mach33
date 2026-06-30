@@ -70,13 +70,13 @@ def text_block(b):
 
 def button_block(b):
     pad = _pad(b.get("pad", [18, 50]), 2, "button")
-    # Defaults are neutral FALLBACKS (the spec sets these per design). font_family:
-    # use the design's Figma font when the target account hosts it (check with
-    # `klaviyo.py fonts --has "<family>"`), else this web-safe stack (carries bold).
+    # Defaults are FALLBACKS (the spec sets these per design). font_family: use the design's exact
+    # Figma font (resolve the account-correct name with `klaviyo.py fonts --has "<family>"`), with
+    # Poppins as the fallback and a web-safe tail.
     s = {"background_color": b.get("fill", "#f5f5f1"),
          "block_background_color": b.get("block_bg", "#ffffff"),
          "border_radius": b.get("radius", 30), "color": b.get("color", "#000000"),
-         "font_family": b.get("font_family", "Helvetica, Arial, sans-serif"),
+         "font_family": b.get("font_family", "'Poppins', Helvetica, Arial, sans-serif"),
          "font_size": b.get("font_size", 16), "font_style": "normal",
          "font_weight": str(b.get("weight", "700")),
          "letter_spacing": b.get("letter_spacing", 1),
@@ -94,12 +94,12 @@ REQUIRED = {"image": ["asset_id", "src", "height"], "text": ["content"], "button
 def default_styles(content_bg):
     return [
         {"style_type": "base-styles", "properties": {"currency": "en-US-u-nu-latn_USD_US_USD", "currency_set_on_template": False, "disable_websafe_fonts": False, "mobile_optimizations": True, "tip_tap_enabled": True}, "styles": {"background_format": "auto", "background_position": "left-top", "background_repeat": True, "border_color": "#aaaaaa", "border_radius": 0, "content_background_color": content_bg, "inner_padding_bottom": 0, "inner_padding_left": 0, "inner_padding_right": 0, "inner_padding_top": 0, "margin_top": 0}},
-        {"style_type": "text-styles", "styles": {"color": "#373F47", "font_family": "Helvetica", "font_size": 16, "font_style": "normal", "font_weight": "400", "letter_spacing": 0, "line_height": 1.3, "mobile_font_size": 14, "mobile_line_height": 1.3, "text_align": "left"}},
+        {"style_type": "text-styles", "styles": {"color": "#373F47", "font_family": "'Poppins', Helvetica, Arial, sans-serif", "font_size": 16, "font_style": "normal", "font_weight": "400", "letter_spacing": 0, "line_height": 1.3, "mobile_font_size": 14, "mobile_line_height": 1.3, "text_align": "left"}},
         {"style_type": "link-styles", "styles": {"color": "#49A0E7", "font_style": "normal", "font_weight": "normal", "text_decoration": "underline"}},
-        {"style_type": "heading-1-styles", "styles": {"color": "#373F47", "font_family": "Helvetica", "font_size": 48, "font_style": "normal", "font_weight": "400", "letter_spacing": 0, "line_height": 1.1, "margin_bottom": 20, "mobile_font_size": 40, "mobile_line_height": 1.1, "text_align": "left"}},
-        {"style_type": "heading-2-styles", "styles": {"color": "#373F47", "font_family": "Helvetica", "font_size": 32, "font_style": "normal", "font_weight": "700", "letter_spacing": 0, "line_height": 1.1, "margin_bottom": 0, "mobile_font_size": 22, "mobile_line_height": 1.1, "text_align": "center"}},
-        {"style_type": "heading-3-styles", "styles": {"color": "#373F47", "font_family": "Helvetica", "font_size": 24, "font_style": "normal", "font_weight": "700", "letter_spacing": 0, "line_height": 1.1, "margin_bottom": 12, "mobile_font_size": 18, "mobile_line_height": 1.1, "text_align": "left"}},
-        {"style_type": "heading-4-styles", "styles": {"color": "#373F47", "font_family": "Helvetica", "font_size": 20, "font_style": "normal", "font_weight": "700", "letter_spacing": 0, "line_height": 1.1, "margin_bottom": 9, "mobile_font_size": 16, "mobile_line_height": 1.1, "text_align": "left"}},
+        {"style_type": "heading-1-styles", "styles": {"color": "#373F47", "font_family": "'Poppins', Helvetica, Arial, sans-serif", "font_size": 48, "font_style": "normal", "font_weight": "400", "letter_spacing": 0, "line_height": 1.1, "margin_bottom": 20, "mobile_font_size": 40, "mobile_line_height": 1.1, "text_align": "left"}},
+        {"style_type": "heading-2-styles", "styles": {"color": "#373F47", "font_family": "'Poppins', Helvetica, Arial, sans-serif", "font_size": 32, "font_style": "normal", "font_weight": "700", "letter_spacing": 0, "line_height": 1.1, "margin_bottom": 0, "mobile_font_size": 22, "mobile_line_height": 1.1, "text_align": "center"}},
+        {"style_type": "heading-3-styles", "styles": {"color": "#373F47", "font_family": "'Poppins', Helvetica, Arial, sans-serif", "font_size": 24, "font_style": "normal", "font_weight": "700", "letter_spacing": 0, "line_height": 1.1, "margin_bottom": 12, "mobile_font_size": 18, "mobile_line_height": 1.1, "text_align": "left"}},
+        {"style_type": "heading-4-styles", "styles": {"color": "#373F47", "font_family": "'Poppins', Helvetica, Arial, sans-serif", "font_size": 20, "font_style": "normal", "font_weight": "700", "letter_spacing": 0, "line_height": 1.1, "margin_bottom": 9, "mobile_font_size": 16, "mobile_line_height": 1.1, "text_align": "left"}},
         {"style_type": "mobile-styles", "properties": {}, "styles": {"mobile_margin": 0, "mobile_padding_bottom": 0, "mobile_padding_left": 0, "mobile_padding_right": 0, "mobile_padding_top": 0}},  # mobile_margin 0 = full-bleed on mobile (else a 10px white canvas gutter shows down both sides on any non-white design)
     ]
 
