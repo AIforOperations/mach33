@@ -12,8 +12,9 @@ completes any password prompts; there is **no GitHub login**, the repo is public
 folder is named `<person>-Figma-to-Klaviyo`. Once a machine is set up, skip this.
 
 ## To build a template
-1. The user gives a **Figma email node link** (optionally a brand slug and a real CTA link;
-   the template name is `<brand>_<template>_<lang>` e.g. `acme_welcome_en`, default CTA link `https://mach33media.com/`).
+1. The user gives a **Figma email node link** (optionally a brand slug;
+   the template name is `<brand>_<template>_<lang>` e.g. `acme_welcome_en`). CTAs are left
+   unlinked (empty href); the client adds the real links in Klaviyo.
 2. Invoke **`/figma_to_klaviyo`** with that link. The skill does the whole pipeline: read the
    design, classify each region (live text vs image slice vs native button), slice + compress,
    upload, build the Klaviyo `SYSTEM_DRAGGABLE` template, and verify the render at mobile (390)

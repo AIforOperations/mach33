@@ -7,7 +7,7 @@
 
 ## Read tools
 - `get_metadata(fileKey, nodeId)` — structure: frame dims, each section's x/y/w/h (slice boundaries), node names (contain the text). URL `node-id=7-492` → API `nodeId:"7:492"`.
-- `get_design_context(nodeId)` — exact font family/size/weight/color/line-height/align + merge tags for a text node (also returns a small screenshot).
+- `get_design_context(nodeId)` — exact font family/size/weight/color/line-height/align + merge tags for a text node (also returns a small screenshot). The font family read here is the Figma-font-first input: check it against the target account with `klaviyo.py [--store <slug>] fonts --has "<family>"` (PRESENT → use it; ABSENT → web-safe fallback). See `references/klaviyo_api.md` Fonts.
 - `get_variable_defs(nodeId)` — design tokens (often `{}`; then sample pixels).
 - `get_screenshot(nodeId, fileKey, maxDimension=N)` — short-lived URL to a downscaled PNG, for inspection/thumbnails. It only CAPS the longer edge; it does NOT upscale past 1x.
 - `download_assets(fileKey, nodeId, defaultScale=1.5)` — the export. Returns a short-lived URL to curl, plus up to 20 raw source images (ignore unless you need originals).

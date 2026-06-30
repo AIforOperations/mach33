@@ -10,6 +10,7 @@ Subcommands:
   list   [--filter SUBSTR]                           list templates (id | name | editor | HAS-BUTTON)
   checkenv                                           offline: confirm the key (default or --store) resolves
   stores                                             offline: list wired stores from .env (keys MASKED)
+  fonts  [--has FAMILY]                              list account-hosted fonts; --has tests one (PRESENT/ABSENT)
   wire   <export.csv> [--only s1,s2] [--write-env P] verify each store's key via /accounts, write .env block
   whichstore [--brand NAME] [--figma-file-key KEY]   resolve a design to ONE store slug (or fail; never guess)
   learnfigma --figma-file-key KEY  (with --store)    remember that a Figma file belongs to a store
@@ -483,6 +484,67 @@ def _cmd_wire(a):
     if bad:
         print("SKIPPED (%d, bad/rejected key, NOT written): %s" % (len(bad), ", ".join(bad)))
 
+# ---------------------------------------------------------------------------
+# fonts: which font families does an account host? (drives Figma-font-first selection)
+# ---------------------------------------------------------------------------
+def _account_public(key, rev, store):
+    # The custom_fonts.css URL is keyed by the 6-char public/company id. Use the wired
+    # store's public id when we have it (no API call), else read it from /accounts.
+    if store and store.get("public"):
+        return store["public"]
+    st, d = call("GET", "/api/accounts/", key, rev)
+    if st != 200:
+        die(st, d)
+    return ((d.get("data") or [{}])[0]).get("id", "")
+
+def _fetch_fonts_css(public):
+    # Public static file, NO auth. 404 / empty = the account has no uploaded fonts.
+    url = "https://static-forms.klaviyo.com/fonts/api/v1/%s/custom_fonts.css" % public
+    try:
+        with urllib.request.urlopen(url, timeout=15) as r:
+            return r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return ""
+        _err("ERROR: fetching custom_fonts.css for %s: HTTP %s" % (public, e.code))
+    except OSError as e:
+        _err("ERROR: network failure fetching custom_fonts.css for %s (%s)" % (public, e))
+
+def _parse_fonts_css(css):
+    # HOSTED = '@font-face' families named '<Base>-Klaviyo-Hosted' -> these actually render in
+    # the SEND. WEB = '@import ...family=<Name>' Google fonts -> preview in the editor only and
+    # fall back to web-safe in the send, so they do NOT count as "present".
+    hosted = {}  # normalized base name -> exact font-family string (incl. the -Klaviyo-Hosted suffix)
+    for m in re.finditer(r"font-family:\s*['\"]?([^;'\"}]+?)-Klaviyo-Hosted['\"]?", css):
+        base = m.group(1).strip()
+        hosted[_norm(base)] = base + "-Klaviyo-Hosted"
+    web, seen = [], set()
+    for m in re.finditer(r"family=([^:&'\")]+)", css):
+        fam = m.group(1).replace("+", " ").strip()
+        if fam and _norm(fam) not in seen:
+            seen.add(_norm(fam)); web.append(fam)
+    return hosted, web
+
+def _cmd_fonts(a, key, rev, store):
+    public = _account_public(key, rev, store)
+    if not public:
+        _err("ERROR: could not resolve the account public id (needed for the fonts CSS).")
+    hosted, web = _parse_fonts_css(_fetch_fonts_css(public))
+    if a.has:                                            # scriptable presence check for the skill
+        want = _norm(a.has)
+        if want in hosted:
+            _out("PRESENT\t%s" % hosted[want])           # exact family string to drop into font_family
+            return
+        _out("ABSENT\t%s" % a.has)
+        sys.exit(2)
+    label = _target_desc(store) if store else ("DEFAULT account (public %s)" % public)
+    _out("account: %s" % label)
+    _out("hosted fonts (RENDER in the send -> usable): %s"
+         % (", ".join(sorted(hosted.values())) or "(none uploaded)"))
+    _out("editor-only web fonts (preview only; fall back to web-safe in the send): %s"
+         % (", ".join(web) or "(none)"))
+    _out("Rule: use a design font ONLY if it is listed under 'hosted'; otherwise use a web-safe fallback.")
+
 def main():
     ap = argparse.ArgumentParser(description="Klaviyo client for figma_to_klaviyo")
     ap.add_argument("--env")
@@ -496,6 +558,7 @@ def main():
     l = sub.add_parser("list"); l.add_argument("--filter", default="")
     sub.add_parser("checkenv")   # offline: prove a key resolves, no API call
     sub.add_parser("stores")     # offline: list wired stores, keys masked
+    fo = sub.add_parser("fonts"); fo.add_argument("--has", default="")  # list / test account-hosted fonts
     wp = sub.add_parser("wire"); wp.add_argument("csv"); wp.add_argument("--only", default=""); wp.add_argument("--write-env", default="", dest="write_env")
     ws = sub.add_parser("whichstore"); ws.add_argument("--brand", default=""); ws.add_argument("--figma-file-key", default="", dest="figma_file_key")
     lf = sub.add_parser("learnfigma"); lf.add_argument("--figma-file-key", required=True, dest="figma_file_key")
@@ -508,6 +571,8 @@ def main():
     if a.cmd == "learnfigma": return _cmd_learnfigma(a)
 
     key, rev, store = load_auth(a.env, a.store)
+
+    if a.cmd == "fonts":      return _cmd_fonts(a, key, rev, store)
 
     if a.cmd == "checkenv":
         if store:

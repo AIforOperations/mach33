@@ -15,6 +15,7 @@ import sys, os, json
 INT_STYLE_KEYS = {"letter_spacing", "font_size", "mobile_font_size", "border_radius", "border_width",
                   "margin_top", "margin_bottom", "margin_left", "margin_right",
                   "inner_padding_top", "inner_padding_bottom", "inner_padding_left", "inner_padding_right",
+                  "block_padding_top", "block_padding_bottom", "block_padding_left", "block_padding_right",
                   "mobile_margin", "mobile_padding_top", "mobile_padding_bottom",
                   "mobile_padding_left", "mobile_padding_right", "width", "max_width", "height"}
 
@@ -53,8 +54,15 @@ def _pad(p, n, what):
 
 def text_block(b):
     pad = _pad(b.get("pad", [0, 0, 0, 0]), 4, "text")
-    s = {"inner_padding_top": pad[0], "inner_padding_bottom": pad[1],
-         "inner_padding_left": pad[2], "inner_padding_right": pad[3]}
+    # TWO distinct paddings on a SYSTEM_DRAGGABLE text block (do not confuse them):
+    #   block_padding_* = BLOCK padding (the outer cell that carries the block bg) -> the Figma
+    #                     layout spacing rides here (spec `pad` = [top,bottom,left,right]).
+    #   inner_padding_* = TEXT-AREA padding (the inner text cell) -> FORCED 0/0, never from Figma,
+    #                     so the copy sits flush inside the block.
+    s = {"block_padding_top": pad[0], "block_padding_bottom": pad[1],
+         "block_padding_left": pad[2], "block_padding_right": pad[3],
+         "inner_padding_top": 0, "inner_padding_bottom": 0,
+         "inner_padding_left": 0, "inner_padding_right": 0}
     if b.get("bg"): s["block_background_color"] = b["bg"]
     coerce_ints(s)
     return {"content_type": "block", "type": "text",
@@ -62,9 +70,9 @@ def text_block(b):
 
 def button_block(b):
     pad = _pad(b.get("pad", [18, 50]), 2, "button")
-    # Defaults are neutral FALLBACKS (the spec sets these per design). font_family
-    # leads with a web-safe stack that carries bold and is account-agnostic; set
-    # the account's hosted family in the spec when you want the brand font.
+    # Defaults are neutral FALLBACKS (the spec sets these per design). font_family:
+    # use the design's Figma font when the target account hosts it (check with
+    # `klaviyo.py fonts --has "<family>"`), else this web-safe stack (carries bold).
     s = {"background_color": b.get("fill", "#f5f5f1"),
          "block_background_color": b.get("block_bg", "#ffffff"),
          "border_radius": b.get("radius", 30), "color": b.get("color", "#000000"),
@@ -118,9 +126,8 @@ def main():
     if no_bg:
         sys.stderr.write("note: %d image/text block(s) have no 'bg' (no dark-opt theming; "
                          "white may show through on a colored design).\n" % no_bg)
-    no_href = sum(1 for b in blocks if b.get("type") == "button" and not b.get("href"))
-    if no_href:
-        sys.stderr.write("warning: %d button(s) have no 'href' -- every CTA must be linked.\n" % no_href)
+    # CTAs are intentionally left UNLINKED (empty href on native buttons and image-slice CTAs
+    # alike); the client adds the real links in Klaviyo. So no "missing href" warning here.
     no_alt = sum(1 for b in blocks if b.get("type") == "image" and not b.get("alt"))
     if no_alt:
         sys.stderr.write("note: %d image(s) have no 'alt' (set alt text, or \"Loading...\" if decorative).\n" % no_alt)
