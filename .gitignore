@@ -36,3 +36,8 @@ figma_export_comparison/
 # Real design assets live in builds/ (ignored); no .png is ever tracked at the repo root.
 .playwright-mcp/
 /*.png
+
+# Any .zip is ignored: the only reason to zip here is to bundle the .env (real unrotatable
+# store keys) for a teammate. It must NEVER be committed to this public repo. The pre-commit
+# key scanner can't see inside a compressed archive, so this ignore rule IS the backstop.
+*.zip
