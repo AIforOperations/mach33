@@ -179,6 +179,82 @@ def cmd_shots(a):
     print("%dx%d overview -> %s | white-row bands (seams if mid-email): %s"
           % (w, h, ovp, [(s, e, e - s + 1) for s, e in wb]))
 
+def cmd_alphamap(a):
+    # Margin-alpha map of the TRANSPARENT export: the dark-opt cutout-vs-bake INPUT.
+    # Per y-band, mean alpha of the left+right margins -> TRANSPARENT (on-base -> cutout),
+    # OPAQUE (own full-bleed bg -> bake), or MIXED (a section boundary / straddle -> the
+    # model decides). This only MEASURES; the bake/cutout call on MIXED stays human judgment.
+    im = Image.open(a.image).convert("RGBA"); w, h = im.size; px = im.load()
+    m = max(1, min(a.margin, w // 2)); mx = list(range(0, m)) + list(range(w - m, w))
+    print("img %dx%d  margin-alpha map (left+right %dpx), band=%d" % (w, h, m, a.band))
+    print("y0-y1\tmean_a\tclass")
+    y = 0
+    while y < h:
+        y1 = min(h, y + a.band); tot = n = 0
+        for yy in range(y, y1, 4):
+            for x in mx:
+                tot += px[x, yy][3]; n += 1
+        mean = tot / max(1, n)
+        cls = "TRANSPARENT" if mean < 30 else ("OPAQUE" if mean > 225 else "MIXED")
+        print("%d-%d\t%.0f\t%s" % (y, y1, mean, cls)); y = y1
+
+def _flat_row(px, w, h, c, win):
+    lo = max(1, c - win); hi = min(h - 1, c + win)
+    if hi <= lo: return max(0, min(c, h))
+    return min(range(lo, hi), key=lambda y: (run_len(px, w, y), st.pstdev([sum(px[x, y]) for x in range(0, w, 4)])))
+
+def cmd_slice(a):
+    # Crop MANY image ranges in ONE call (replaces N separate `crop` calls) and print each
+    # block's height at 600 width (= round(sliceH*600/sliceW)) so the spec needs no in-head math.
+    # `--ranges y0:y1,y0:y1,...` lists ONLY the image bands; live-text gaps are simply omitted.
+    # `--snap` snaps each interior boundary to the flattest nearby row (reuse gap logic) so a cut
+    # never lands on text/a face. 0 and the image height are pinned (no snap on the outer edges).
+    im = Image.open(a.image); w, h = im.size
+    ranges = []
+    for r in a.ranges.split(","):
+        r = r.strip()
+        if not r: continue
+        if ":" not in r: sys.exit("slice: range %r must be y0:y1" % r)
+        y0s, y1s = r.split(":", 1); ranges.append([int(y0s), int(y1s)])
+    if not ranges: sys.exit("slice: --ranges is empty")
+    if a.snap:
+        rpx = im.convert("RGB").load()
+        for rg in ranges:
+            rg[0] = 0 if rg[0] <= 0 else _flat_row(rpx, w, h, rg[0], a.snap_window)
+            rg[1] = h if rg[1] >= h else _flat_row(rpx, w, h, rg[1], a.snap_window)
+    os.makedirs(a.outdir, exist_ok=True)
+    names = [n.strip() for n in a.names.split(",")] if a.names else None
+    for i, (y0, y1) in enumerate(ranges):
+        y0 = max(0, y0); y1 = min(h, y1)
+        if y1 <= y0: sys.exit("slice: empty range [%d:%d]" % (y0, y1))
+        nm = names[i] if (names and i < len(names) and names[i]) else "%02d" % (i + 1)
+        outp = os.path.join(a.outdir, "%s.png" % nm)
+        im.crop((0, y0, w, y1)).save(outp)
+        print("%s\t[%d:%d]\t%dx%d\theight600=%d" % (outp, y0, y1, w, y1 - y0, round((y1 - y0) * 600.0 / w)))
+
+def cmd_edges(a):
+    # Scripted render-screenshot gate (replaces the per-pixel browser_evaluate): horizontal
+    # overflow (screenshot wider than the viewport), white side-gutter (left+right edge columns
+    # pure #FFFFFF = the mobile_margin canvas leak), and full-width white bands (a flush-tiling
+    # seam if mid-email). Keys on true #FFFFFF (>250) so a cream/off-white base is NOT flagged.
+    im = Image.open(a.image).convert("RGB"); w, h = im.size; px = im.load()
+    overflow = w > a.width + 1
+    step = 3; cols = len(range(0, w, step)); white = []
+    for y in range(h):
+        c = sum(1 for x in range(0, w, step) if px[x, y][0] > 250 and px[x, y][1] > 250 and px[x, y][2] > 250)
+        if c / cols > 0.5: white.append(y)
+    bands = []
+    for y in white:
+        if bands and y == bands[-1][1] + 1: bands[-1][1] = y
+        else: bands.append([y, y])
+    rows = list(range(0, h, 2)); gut = 0; xr = w - 3
+    for y in rows:
+        if (px[2, y][0] > 250 and px[2, y][1] > 250 and px[2, y][2] > 250 and
+                px[xr, y][0] > 250 and px[xr, y][1] > 250 and px[xr, y][2] > 250):
+            gut += 1
+    print("edges %dx%d expect_w=%d | h-overflow=%s | edge-white=%.0f%% | full-width-white bands=%s"
+          % (w, h, a.width, overflow, 100.0 * gut / max(1, len(rows)), [(s, e, e - s + 1) for s, e in bands]))
+
 def main():
     ap = argparse.ArgumentParser(description="imaging helpers")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -189,8 +265,12 @@ def main():
     o = sub.add_parser("overview"); o.add_argument("image"); o.add_argument("--out"); o.add_argument("--max", type=int, default=1900)
     s = sub.add_parser("shots"); s.add_argument("image"); s.add_argument("outdir")
     di = sub.add_parser("dims"); di.add_argument("image")
+    am = sub.add_parser("alphamap"); am.add_argument("image"); am.add_argument("--band", type=int, default=120); am.add_argument("--margin", type=int, default=40)
+    sl = sub.add_parser("slice"); sl.add_argument("image"); sl.add_argument("outdir"); sl.add_argument("--ranges", required=True); sl.add_argument("--names", default=""); sl.add_argument("--snap", action="store_true"); sl.add_argument("--snap-window", type=int, default=20, dest="snap_window")
+    eg = sub.add_parser("edges"); eg.add_argument("image"); eg.add_argument("--width", type=int, default=390)
     a = ap.parse_args()
-    {"compress": cmd_compress, "detect": cmd_detect, "gap": cmd_gap, "crop": cmd_crop, "overview": cmd_overview, "shots": cmd_shots, "dims": cmd_dims}[a.cmd](a)
+    {"compress": cmd_compress, "detect": cmd_detect, "gap": cmd_gap, "crop": cmd_crop, "overview": cmd_overview, "shots": cmd_shots, "dims": cmd_dims,
+     "alphamap": cmd_alphamap, "slice": cmd_slice, "edges": cmd_edges}[a.cmd](a)
 
 if __name__ == "__main__":
     main()
