@@ -30,3 +30,9 @@ builds/
 # translator agent, which the skill invokes, is shipped.
 .claude/agents/*
 !.claude/agents/translator.md
+figma_export_comparison/
+
+# Playwright's screenshot/log scratch dir, and stray root-level render/verify screenshots.
+# Real design assets live in builds/ (ignored); no .png is ever tracked at the repo root.
+.playwright-mcp/
+/*.png

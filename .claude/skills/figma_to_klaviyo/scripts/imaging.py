@@ -77,8 +77,32 @@ def gap_scan(px, w, y, h, step):
     while 0 < y < h - 1 and run_len(px, w, y) > 10: y += step
     return y
 
+def _hex_rgb(h):
+    h = (h or "").lstrip("#")
+    if len(h) != 6: raise ValueError("bad hex color %r (want #rrggbb)" % h)
+    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+def cmd_opacity(a):
+    """Deterministic structural check: is a slice OPAQUE or does it carry real transparency.
+    Bake-light-islands slices MUST be OPAQUE (else a dark inbox shows through + baked dark text
+    vanishes); transparent-cutout slices are expected to have alpha. Replaces the (unreliable)
+    browser dark-recolor screenshot — Klaviyo does dark mode itself, so we verify the INPUT."""
+    im = Image.open(a.image)
+    if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+        ach = im.convert("RGBA").getchannel("A"); lo = ach.getextrema()[0]
+        ab = ach.tobytes(); transp = sum(1 for v in ab if v < 250) / max(1, len(ab))
+        print("%s\tmode=%s\t%s\talpha_min=%d\ttransparent=%.1f%%"
+              % (a.image, im.mode, "OPAQUE" if lo >= 250 else "HAS-ALPHA", lo, transp * 100))
+    else:
+        print("%s\tmode=%s\tOPAQUE" % (a.image, im.mode))
+
 def cmd_compress(a):
     im = Image.open(a.infile)
+    if getattr(a, "flatten", None):
+        # composite onto a solid base hex FIRST -> guaranteed opaque (bake-light-islands), and
+        # avoids the JPG "convert RGB flattens alpha onto BLACK" footgun. Skip for a real cutout.
+        bg = Image.new("RGBA", im.size, _hex_rgb(a.flatten) + (255,))
+        im = Image.alpha_composite(bg, im.convert("RGBA")).convert("RGB")
     real_alpha = False
     if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
         real_alpha = im.convert("RGBA").getchannel("A").getextrema()[0] < 250  # a pixel is actually transparent
@@ -255,10 +279,61 @@ def cmd_edges(a):
     print("edges %dx%d expect_w=%d | h-overflow=%s | edge-white=%.0f%% | full-width-white bands=%s"
           % (w, h, a.width, overflow, 100.0 * gut / max(1, len(rows)), [(s, e, e - s + 1) for s, e in bands]))
 
+def cmd_stitch(a):
+    # BROWSER-FREE mobile preview: stack a plan's compressed FINAL slices (in plan order) at a
+    # target width into ONE tall image for a single visual Read. For an all-baked design the
+    # Klaviyo render IS this stack (slices tile flush, mobile_margin 0), so the browser adds
+    # nothing -- this is the same pixels, minus the serve/navigate round trips. text/button
+    # blocks (which Klaviyo renders live, non-deterministically) become a labeled strip so their
+    # position is honest; a design that HAS them still needs the browser read for those blocks.
+    from PIL import ImageDraw
+    plan = __import__("json").load(open(a.plan, encoding="utf-8"))
+    builddir = plan["builddir"]; final_dir = os.path.join(builddir, "final")
+    W = a.width; rows = []
+    for b in plan["blocks"]:
+        r = b.get("role")
+        if r == "image":
+            ext = "jpg" if b.get("fmt", "jpg") == "jpg" else "png"
+            fp = os.path.join(final_dir, b["name"] + "." + ext)
+            if not os.path.exists(fp):  # fall back to raw slice if final not built yet
+                fp = os.path.join(builddir, "slices", b["name"] + ".png")
+            im = Image.open(fp)
+            if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+                im = im.convert("RGBA")
+                if im.getchannel("A").getextrema()[0] < 250:  # a transparent cutout: show it on its base hex
+                    base = Image.new("RGBA", im.size, _hex_rgb(b.get("bg") or "#ffffff") + (255,))
+                    im = Image.alpha_composite(base, im)
+            im = im.convert("RGB"); w, h = im.size
+            rows.append(("img", im.resize((W, max(1, round(h * W / w))), Image.LANCZOS), b))
+        elif r in ("text", "button"):
+            rows.append((r, None, b))
+    total = sum(im.size[1] for k, im, b in rows if k == "img")
+    strips = [b for k, im, b in rows if k != "img"]
+    total += 64 * len(strips)
+    canvas = Image.new("RGB", (W, total), (255, 255, 255)); dr = ImageDraw.Draw(canvas); y = 0
+    for k, im, b in rows:
+        if k == "img":
+            canvas.paste(im, (0, y)); y += im.size[1]
+        else:
+            bg = _hex_rgb(b.get("bg") or b.get("block_bg") or "#eeeeee")
+            dr.rectangle([0, y, W, y + 63], fill=bg)
+            if k == "button":
+                fill = _hex_rgb(b.get("fill", "#333333"))
+                dr.rectangle([W // 4, y + 14, W * 3 // 4, y + 49], fill=fill)
+                label = "[BUTTON] " + (b.get("label", "") or "")
+            else:
+                import re as _re
+                label = "[LIVE TEXT] " + _re.sub("<[^>]+>", " ", b.get("content", "") or "")[:60]
+            dr.text((6, y + 2), label, fill=(120, 120, 120)); y += 64
+    canvas.save(a.out)
+    baked = sum(1 for k, im, b in rows if k == "img")
+    print("%s\t%dx%d\tbaked_slices=%d\tlive_strips=%d\tall_baked=%s"
+          % (a.out, W, total, baked, len(strips), len(strips) == 0))
+
 def main():
     ap = argparse.ArgumentParser(description="imaging helpers")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    c = sub.add_parser("compress"); c.add_argument("infile"); c.add_argument("outfile"); c.add_argument("--quality", type=int, default=82); c.add_argument("--format", choices=["auto", "jpg", "png"], default="auto"); c.add_argument("--max-bytes", type=int, default=0)
+    c = sub.add_parser("compress"); c.add_argument("infile"); c.add_argument("outfile"); c.add_argument("--quality", type=int, default=82); c.add_argument("--format", choices=["auto", "jpg", "png"], default="auto"); c.add_argument("--max-bytes", type=int, default=0); c.add_argument("--flatten", default=None, help="#rrggbb: composite onto this solid bg -> opaque (bake-light-islands). Omit for a transparent cutout.")
     d = sub.add_parser("detect"); d.add_argument("image"); d.add_argument("--frac", type=float, default=0.5); d.add_argument("--y0", type=int, default=0); d.add_argument("--y1", type=int, default=0)
     g = sub.add_parser("gap"); g.add_argument("image"); g.add_argument("--lo", type=float, default=0.30); g.add_argument("--hi", type=float, default=0.65)
     cr = sub.add_parser("crop"); cr.add_argument("image"); cr.add_argument("outfile"); cr.add_argument("y0", type=int); cr.add_argument("y1", type=int)
@@ -268,9 +343,11 @@ def main():
     am = sub.add_parser("alphamap"); am.add_argument("image"); am.add_argument("--band", type=int, default=120); am.add_argument("--margin", type=int, default=40)
     sl = sub.add_parser("slice"); sl.add_argument("image"); sl.add_argument("outdir"); sl.add_argument("--ranges", required=True); sl.add_argument("--names", default=""); sl.add_argument("--snap", action="store_true"); sl.add_argument("--snap-window", type=int, default=20, dest="snap_window")
     eg = sub.add_parser("edges"); eg.add_argument("image"); eg.add_argument("--width", type=int, default=390)
+    op = sub.add_parser("opacity"); op.add_argument("image")
+    stt = sub.add_parser("stitch"); stt.add_argument("plan"); stt.add_argument("--out", required=True); stt.add_argument("--width", type=int, default=390)
     a = ap.parse_args()
     {"compress": cmd_compress, "detect": cmd_detect, "gap": cmd_gap, "crop": cmd_crop, "overview": cmd_overview, "shots": cmd_shots, "dims": cmd_dims,
-     "alphamap": cmd_alphamap, "slice": cmd_slice, "edges": cmd_edges}[a.cmd](a)
+     "alphamap": cmd_alphamap, "slice": cmd_slice, "edges": cmd_edges, "opacity": cmd_opacity, "stitch": cmd_stitch}[a.cmd](a)
 
 if __name__ == "__main__":
     main()

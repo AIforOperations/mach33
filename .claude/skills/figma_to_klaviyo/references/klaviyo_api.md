@@ -47,7 +47,29 @@ How the resolution works (both font kinds are USABLE): Klaviyo serves each accou
 - **`block_background_color`** lives in each block's `data.styles` — the SAME key for image, text, and button blocks; it is the CSS color the inbox dark/light engine re-themes (the dark-opt lever; see `slicing_rules.md`). `build_def.py` sets it on all three block types from a spec `bg` / `block_bg` field. To set it on an EXISTING template: GET the template → write `block_background_color` onto each block's `data.styles` → scrub read-only ids (keep `asset_id`) → PATCH.
 - `styles` = array of global style objects (build_def.py supplies these; override per design): `base-styles` (`content_background_color`, `margin_top:0`, `mobile_optimizations:true`), `text-styles`, `link-styles`, `heading-1-styles`..`heading-4-styles`, `mobile-styles`. Heading styles carry both `font_size` (desktop) and `mobile_font_size` (mobile-only; not valid per-block) → Klaviyo emits `h2{...}` + `@media(max-width:480px){h2{...!important}}`.
 
-## Block-spec format (author this, feed to build_def.py)
+## plan.json (author THIS; feed to build.py — the normal path)
+`build.py builds/<brand>/plan.json` is the one-shot deterministic builder: it slices the image bands out of the color export, compresses (parallel), uploads, assembles the block-spec below, runs build_def, creates/patches, and renders — no per-step model work. So the agent authors a `plan.json`, not the raw spec. Shape:
+```json
+{
+  "name": "acme_welcome_en", "width": 600,
+  "builddir": "builds/acme", "export": "color.png", "export_transparent": "transparent.png", "store": null,
+  "target": {"mode": "create"},
+  "blocks": [
+    {"role":"image","name":"card","range":[0,900],"bg":"#e8f6ff","alt":"on-base card (transparent cutout - default)","href":null},
+    {"role":"image","name":"hero","range":[900,1600],"fmt":"jpg","bg":"#e8f6ff","alt":"own-bg photo","fill":true},
+    {"role":"text","content":"<p>Plain copy.</p>","bg":"#e8f6ff","pad":[20,24,36,36]},
+    {"role":"button","label":"SHOP NOW","fill":"#198fbf","color":"#ffffff","block_bg":"#e8f6ff","radius":30,"font_size":16,"font_family":"'Poppins', Helvetica, Arial, sans-serif","weight":"600","letter_spacing":1,"pad":[14,48],"href":""},
+    {"role":"image","name":"footer","range":[3200,3600],"bg":"#e8f6ff","alt":"Footer"}
+  ]
+}
+```
+- Two exports: `export` = COLOR/filled PNG, `export_transparent` = TRANSPARENT PNG. image block: `range` = `[y0,y1]` (1.5x px), `name` = slice/asset label, `bg` = base hex (→ `block_background_color`). build.py fills in `asset_id`/`src`/`height`.
+- **DARK METHOD:** an image block is a TRANSPARENT cutout by DEFAULT (sliced from `export_transparent`, alpha kept, PNG — so Klaviyo re-themes the base under it in dark). Add **`"fill": true`** to slice from the COLOR export and flatten OPAQUE onto `bg` — for an own-background photo, or a region whose transparent cutout came out weird/angled. `fmt` (`jpg` photo | `png` flat) applies to a FILLED block; a cutout is always PNG. Optional `quality` (jpg, default 82). build.py reports `dark: N transparent cutouts, M filled` + any `DARK-CHECK WARNING`.
+- `text`/`button` blocks are identical to the block-spec below and pass straight through (live text + native buttons re-theme automatically via `block_bg`). Optional top-level `headings` / `styles_override` also pass through.
+- DARK-BASE-NATIVE design (already dark, e.g. black/maroon): omit `export_transparent` and mark every image block `"fill": true` (opaque) with `bg` = base hex.
+- build.py header documents the same schema; `--dry-run` slices+compresses locally without uploading.
+
+## Block-spec format (what build_def.py consumes; build.py assembles it from plan.json)
 ```json
 {
   "name": "acme_welcome_en",
